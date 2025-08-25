@@ -1,11 +1,15 @@
-import * as showdown from 'showdown';
+import showdown from 'showdown';
 
 const App = {
     // STATE
     state: {
         articles: [],
         currentArticleId: null,
-        currentView: 'viewer', // 'viewer' or 'editor'
+        currentView: 'dashboard', // 'dashboard', 'viewer', or 'editor'
+        filters: {
+            status: 'all',
+            sortBy: 'updatedAt'
+        }
     },
 
     // EDITOR INSTANCE
@@ -18,12 +22,18 @@ const App = {
         mainContent: document.getElementById('main-content'),
         viewer: document.getElementById('viewer'),
         editor: document.getElementById('editor'),
+        dashboard: document.getElementById('dashboard'),
+        articleGrid: document.getElementById('article-grid'),
         articleTitle: document.getElementById('article-title'),
         articleContent: document.getElementById('article-content'),
+        articleTagsContainer: document.getElementById('article-tags-container'),
+        articleLastUpdated: document.getElementById('article-last-updated'),
         welcomeMessage: document.getElementById('welcome-message'),
         editorForm: document.getElementById('editor-form'),
         editorTitle: document.getElementById('editor-title'),
         editorContent: document.getElementById('editor-content'),
+        editorTags: document.getElementById('editor-tags'),
+        editorStatus: document.getElementById('editor-status'),
         articleIdInput: document.getElementById('article-id'),
         newArticleBtn: document.getElementById('new-article-btn'),
         editArticleBtn: document.getElementById('edit-article-btn'),
@@ -31,6 +41,9 @@ const App = {
         saveBtn: document.getElementById('save-btn'),
         cancelBtn: document.getElementById('cancel-btn'),
         searchInput: document.getElementById('search-input'),
+        backToListBtn: document.getElementById('back-to-list-btn'),
+        filterStatus: document.getElementById('filter-status'),
+        sortBy: document.getElementById('sort-by'),
     },
 
     // INITIALIZATION
@@ -53,9 +66,13 @@ const App = {
         this.elements.editArticleBtn.addEventListener('click', () => this.showEditor(this.state.currentArticleId));
         this.elements.deleteArticleBtn.addEventListener('click', () => this.deleteArticle());
         this.elements.editorForm.addEventListener('submit', (e) => this.handleSave(e));
-        this.elements.cancelBtn.addEventListener('click', () => this.showViewer());
+        this.elements.cancelBtn.addEventListener('click', () => this.handleCancel());
         this.elements.articleList.addEventListener('click', (e) => this.handleArticleSelection(e));
+        this.elements.articleGrid.addEventListener('click', (e) => this.handleArticleSelection(e));
         this.elements.searchInput.addEventListener('input', (e) => this.renderArticleList(e.target.value));
+        this.elements.backToListBtn.addEventListener('click', () => this.showDashboard());
+        this.elements.filterStatus.addEventListener('change', (e) => this.handleFilterChange('status', e.target.value));
+        this.elements.sortBy.addEventListener('change', (e) => this.handleFilterChange('sortBy', e.target.value));
     },
 
     // DATA HANDLING
@@ -73,6 +90,7 @@ const App = {
     },
 
     addSampleArticle() {
+        const now = new Date().toISOString();
         const sampleArticle = {
             id: crypto.randomUUID(),
             title: "Bem-vindo ao Help Livia!",
@@ -97,18 +115,21 @@ function helloWorld() {
 \`\`\`
 
 Clique no botão **Editar Artigo** (ícone de lápis) para ver como este artigo é formatado e começar a criar o seu!
-            `
+            `,
+            tags: ["exemplo", "introdução"],
+            status: "published",
+            createdAt: now,
+            updatedAt: now,
         };
         this.state.articles.push(sampleArticle);
         this.saveArticles();
-        this.state.currentArticleId = sampleArticle.id;
+        this.state.currentArticleId = null; // Start at dashboard
     },
 
     // STATE MUTATIONS & LOGIC
     setCurrentArticle(id) {
         this.state.currentArticleId = id;
         this.showViewer();
-        this.render();
     },
     
     initEditor() {
@@ -134,11 +155,15 @@ Clique no botão **Editar Artigo** (ícone de lápis) para ver como este artigo 
             if(article) {
                 this.elements.articleIdInput.value = article.id;
                 this.elements.editorTitle.value = article.title;
+                this.elements.editorTags.value = (article.tags || []).join(', ');
+                this.elements.editorStatus.value = article.status || 'published';
                 this.easyMDE.value(article.content);
             }
         } else {
             this.elements.editorForm.reset();
             this.elements.articleIdInput.value = '';
+            this.elements.editorTags.value = '';
+            this.elements.editorStatus.value = 'published';
             this.easyMDE.value('');
         }
         this.render();
@@ -149,11 +174,28 @@ Clique no botão **Editar Artigo** (ícone de lápis) para ver como este artigo 
         this.render();
     },
     
+    showDashboard() {
+        this.state.currentArticleId = null;
+        this.state.currentView = 'dashboard';
+        this.render();
+    },
+
+    handleCancel() {
+        if (this.state.currentArticleId) {
+            this.showViewer();
+        } else {
+            this.showDashboard();
+        }
+    },
+    
     handleSave(e) {
         e.preventDefault();
         const id = this.elements.articleIdInput.value;
         const title = this.elements.editorTitle.value.trim();
         const content = this.easyMDE.value().trim();
+        const tags = this.elements.editorTags.value.split(',').map(tag => tag.trim()).filter(Boolean);
+        const status = this.elements.editorStatus.value;
+        const now = new Date().toISOString();
 
         if (!title || !content) {
             alert('Título e conteúdo são obrigatórios.');
@@ -163,13 +205,25 @@ Clique no botão **Editar Artigo** (ícone de lápis) para ver como este artigo 
         if (id) { // Update existing
             const index = this.state.articles.findIndex(a => a.id === id);
             if (index > -1) {
-                this.state.articles[index] = { ...this.state.articles[index], title, content };
+                this.state.articles[index] = { 
+                    ...this.state.articles[index], 
+                    title, 
+                    content,
+                    tags,
+                    status,
+                    updatedAt: now,
+                };
+                 this.state.currentArticleId = id;
             }
         } else { // Create new
             const newArticle = {
                 id: crypto.randomUUID(),
                 title,
-                content
+                content,
+                tags,
+                status,
+                createdAt: now,
+                updatedAt: now,
             };
             this.state.articles.unshift(newArticle);
             this.state.currentArticleId = newArticle.id;
@@ -187,15 +241,20 @@ Clique no botão **Editar Artigo** (ícone de lápis) para ver como este artigo 
             this.state.articles = this.state.articles.filter(a => a.id !== this.state.currentArticleId);
             this.state.currentArticleId = null;
             this.saveArticles();
-            this.render();
+            this.showDashboard();
         }
     },
 
     handleArticleSelection(e) {
-        if (e.target && e.target.closest('li')) {
-            const id = e.target.closest('li').dataset.id;
-            this.setCurrentArticle(id);
+        const card = e.target.closest('[data-id]');
+        if (card) {
+            this.setCurrentArticle(card.dataset.id);
         }
+    },
+
+    handleFilterChange(key, value) {
+        this.state.filters[key] = value;
+        this.render();
     },
 
     // RENDER FUNCTIONS
@@ -226,31 +285,106 @@ Clique no botão **Editar Artigo** (ícone de lápis) para ver como este artigo 
     },
 
     renderMainContent() {
-        if (this.state.currentView === 'editor') {
-            this.elements.viewer.classList.remove('active');
-            this.elements.editor.classList.add('active');
-        } else { // viewer
-            this.elements.editor.classList.remove('active');
-            this.elements.viewer.classList.add('active');
+        // Hide all views first
+        this.elements.viewer.classList.remove('active');
+        this.elements.editor.classList.remove('active');
+        this.elements.dashboard.classList.remove('active');
 
-            const article = this.state.articles.find(a => a.id === this.state.currentArticleId);
-            if (article) {
-                this.elements.welcomeMessage.style.display = 'none';
-                this.elements.articleTitle.style.display = 'block';
-                this.elements.articleContent.style.display = 'block';
-                this.elements.editArticleBtn.style.display = 'inline-flex';
-                this.elements.deleteArticleBtn.style.display = 'inline-flex';
-                
-                this.elements.articleTitle.textContent = article.title;
-                this.elements.articleContent.innerHTML = this.converter.makeHtml(article.content);
-            } else {
-                this.elements.welcomeMessage.style.display = 'flex';
-                this.elements.articleTitle.style.display = 'none';
-                this.elements.articleContent.style.display = 'none';
-                this.elements.editArticleBtn.style.display = 'none';
-                this.elements.deleteArticleBtn.style.display = 'none';
-            }
+        if (this.state.currentView === 'editor') {
+            this.elements.editor.classList.add('active');
+        } else if (this.state.currentView === 'viewer' && this.state.currentArticleId) {
+            this.elements.viewer.classList.add('active');
+            this.renderViewer();
+        } else {
+            this.elements.dashboard.classList.add('active');
+            this.renderDashboard();
         }
+    },
+
+    renderViewer() {
+        const article = this.state.articles.find(a => a.id === this.state.currentArticleId);
+        if (article) {
+            this.elements.articleTitle.textContent = article.title;
+            this.elements.articleContent.innerHTML = this.converter.makeHtml(article.content);
+            
+            // Render tags
+            this.elements.articleTagsContainer.innerHTML = (article.tags || [])
+                .map(tag => `<span class="tag">${tag}</span>`).join('');
+
+            // Render last updated
+            const lastUpdated = new Date(article.updatedAt).toLocaleString('pt-BR');
+            this.elements.articleLastUpdated.textContent = `Última atualização: ${lastUpdated}`;
+        } else {
+             // If for some reason article not found, go to dashboard
+            this.showDashboard();
+        }
+    },
+
+    renderDashboard() {
+        this.elements.articleGrid.innerHTML = '';
+        const { status, sortBy } = this.state.filters;
+
+        // 1. Filter
+        let filteredArticles = this.state.articles;
+        if (status !== 'all') {
+            filteredArticles = filteredArticles.filter(a => a.status === status);
+        }
+        
+        // 2. Search (from sidebar input)
+        const searchTerm = this.elements.searchInput.value.toLowerCase();
+        if (searchTerm) {
+            filteredArticles = filteredArticles.filter(article => 
+                article.title.toLowerCase().includes(searchTerm) ||
+                article.content.toLowerCase().includes(searchTerm) ||
+                (article.tags || []).some(tag => tag.toLowerCase().includes(searchTerm))
+            );
+        }
+
+        // 3. Sort
+        filteredArticles.sort((a, b) => {
+            if (sortBy === 'title') {
+                return a.title.localeCompare(b.title);
+            }
+            // For dates, newest first
+            return new Date(b[sortBy]) - new Date(a[sortBy]);
+        });
+        
+        if (this.state.articles.length === 0) {
+            this.elements.welcomeMessage.classList.remove('hidden');
+            this.elements.articleGrid.style.display = 'none';
+        } else {
+            this.elements.welcomeMessage.classList.add('hidden');
+            this.elements.articleGrid.style.display = 'grid';
+        }
+
+        if (filteredArticles.length === 0) {
+            this.elements.articleGrid.innerHTML = `<p>Nenhum artigo corresponde aos seus filtros.</p>`;
+            return;
+        }
+
+        filteredArticles.forEach(article => {
+            const card = document.createElement('div');
+            card.className = 'article-card';
+            card.dataset.id = article.id;
+
+            const snippet = this.converter.makeHtml(article.content).replace(/<[^>]*>?/gm, '').substring(0, 150) + '...';
+            
+            const tagsHTML = (article.tags || [])
+                .map(tag => `<span class="tag">${tag}</span>`).join('');
+
+            card.innerHTML = `
+                <div class="card-header">
+                    <h3 class="card-title">${article.title}</h3>
+                    <p class="card-meta">Criado em: ${new Date(article.createdAt).toLocaleDateString('pt-BR')}</p>
+                </div>
+                <p class="card-content-snippet">${snippet}</p>
+                <div class="card-footer">
+                    <div class="card-tags">${tagsHTML}</div>
+                    <span class="card-status ${article.status}">${article.status === 'draft' ? 'Rascunho' : 'Publicado'}</span>
+                </div>
+            `;
+            this.elements.articleGrid.appendChild(card);
+        });
     }
 };
 
